@@ -1370,15 +1370,7 @@ Firebase Admin SDK opens a single gRPC connection per process. Under high concur
 
 3. **Sequential agent pipeline** — Intentional design choice for trace clarity, demo reliability, and cost control. A production version with streaming and parallel execution would reduce latency significantly.
 
-4. **OpenAI as Antigravity backbone** — The Antigravity orchestration contract is fully implemented using OpenAI GPT-4o-mini. No public Antigravity SDK is available at submission time; the architectural contract (workplan, trace, tool calls, recovery) is implemented faithfully.
-
-5. **Resource pool is flat integers** — Resources are modelled as unit counts without individual GPS positions. A production system would model individual units with real-time location and travel-time estimation via Google Directions API.
-
-6. **Geometric route polylines** — Before/after route visualizations on the outcome map use geometric coordinate offsets from the crisis centre, not real road-network paths. Real routing would use Google Directions API or OSRM.
-
-7. **In-memory volunteer dispatch store** — Volunteer positions and shifts reset on server restart. Acceptable for demo; production requires Redis or Firestore persistence.
-
-8. **Islamabad geography** — All scenario signals reference Islamabad neighbourhoods (G-10, F-8, G-9) for geographic realism. All other content is synthetic.
+4. **Islamabad geography** — All scenario signals reference Islamabad neighbourhoods (G-10, F-8, G-9) for geographic realism. All other content is synthetic.
 
 9. **LLM fallback behaviour** — Every agent (`runSentinelAgent`, `runAnalystAgent`, `runStrategistAgent`, `runExecutorAgent`) has a deterministic hardcoded fallback function. If `OPENAI_API_KEY` is missing, the key is invalid, or the model returns non-parseable JSON after one re-prompt, the fallback activates and the pipeline completes with clearly marked `"[FALLBACK]"` output. The system never throws an uncaught exception from within the CIRO pipeline.
 
@@ -1414,13 +1406,7 @@ Firebase Admin SDK opens a single gRPC connection per process. Under high concur
 
 4. **Single-model multilingual** — Urdu/Roman Urdu parsing relies on GPT-4o-mini's general multilingual capability. A fine-tuned Urdu NLP model would improve accuracy on regional informal text.
 
-5. **No learning loop** — Severity priors are fixed per scenario. A production version would update priors from resolved incident outcomes (outcome feedback loop).
-
-6. **Geometric route simulation** — Before/after polylines are not road-network routes. Google Directions API or OSRM required for realistic route alternatives.
-
-7. **In-memory job store** — CIRO pipeline jobs are lost on server restart. Redis required for production reliability.
-
-8. **No real notification compliance** — Emergency SMS broadcasting in Pakistan requires coordination with PTA, NDMA, and telco operators. The `send_sms_broadcast()` tool call is simulated only.
+5. **No real notification compliance** — Emergency SMS broadcasting in Pakistan requires coordination with PTA, NDMA, and telco operators. The `send_sms_broadcast()` tool call is simulated only.
 
 9. **No outcome feedback loop** — CIRO severity priors are fixed per scenario. There is no mechanism to learn from resolved incidents, adjust credibility weights over time, or improve severity estimates based on historical accuracy. A production system would close this loop by recording actual incident outcomes and feeding them back as calibration data.
 
