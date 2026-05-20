@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.env*
+!.env.example
+.DS_Store
+android/
+ios/
+# Firebase config - generated at build time from env var
+google-services.json
+GoogleService-Info.plist

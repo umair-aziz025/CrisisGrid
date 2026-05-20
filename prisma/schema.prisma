@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  VICTIM
+  VOLUNTEER
+  STAFF
+  ADMIN
+  SUPERADMIN
+}
+
+enum RequestType {
+  MEDICAL
+  FOOD_WATER
+  RESCUE
+}
+
+enum RequestStatus {
+  ACTIVE
+  CLAIMED
+  RESOLVED
+}
+
+enum TaskStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id                  Int       @id @default(autoincrement())
+  email               String    @unique
+  passwordHash        String
+  role                Role      @default(VICTIM)
+  name                String
+  phone               String?
+  address             String?
+  publicId            String?   @unique
+  banned                Boolean   @default(false)
+  failedLoginAttempts   Int       @default(0)
+  lockedUntil           DateTime?
+  passwordResetToken    String?
+  passwordResetExpiry   DateTime?
+  createdAt           DateTime  @default(now())
+
+  requests            Request[]
+  tasks               Task[]    @relation("VolunteerTasks")
+  actionsPerformed    ActivityLog[] @relation("PerformedBy")
+  actionsReceived     ActivityLog[] @relation("TargetUser")
+  safeZones           SafeZone[]
+}
+
+model Request {
+  id          Int           @id @default(autoincrement())
+  type        RequestType
+  description String
+  lat         Float
+  lng         Float
+  status      RequestStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+
+  userId      Int
+  user        User          @relation(fields: [userId], references: [id])
+
+  tasks       Task[]
+}
+
+model Task {
+  id           Int        @id @default(autoincrement())
+  status       TaskStatus @default(ASSIGNED)
+  aiRoutePlan  String?
+  resolvedAt   DateTime?
+
+  requestId    Int
+  request      Request    @relation(fields: [requestId], references: [id])
+
+  volunteerId  Int
+  volunteer    User       @relation("VolunteerTasks", fields: [volunteerId], references: [id])
+
+  @@unique([requestId, volunteerId])
+}
+
+model ContactSubmission {
+  id          Int      @id @default(autoincrement())
+  orgName     String
+  contactName String
+  email       String
+  phone       String?
+  message     String
+  createdAt   DateTime @default(now())
+}
+
+model ActivityLog {
+  id            Int      @id @default(autoincrement())
+  action        String
+  details       String?
+  createdAt     DateTime @default(now())
+
+  performedById Int
+  performedBy   User     @relation("PerformedBy", fields: [performedById], references: [id])
+
+  targetUserId  Int?
+  targetUser    User?    @relation("TargetUser", fields: [targetUserId], references: [id])
+}
+
+model SafeZone {
+  id          Int      @id @default(autoincrement())
+  name        String
+  type        String
+  lat         Float
+  lng         Float
+  description String?
+  createdAt   DateTime @default(now())
+
+  createdById Int?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+}

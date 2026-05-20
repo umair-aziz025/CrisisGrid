@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <style>
+      @keyframes pulseInner {
+        0% { opacity: 0.3; }
+        50% { opacity: 1; }
+        100% { opacity: 0.3; }
+      }
+      @keyframes pulseMiddle {
+        0% { opacity: 0.3; }
+        33% { opacity: 1; }
+        66% { opacity: 0.3; }
+        100% { opacity: 0.3; }
+      }
+      @keyframes pulseOuter {
+        0% { opacity: 0.3; }
+        25% { opacity: 0.3; }
+        50% { opacity: 1; }
+        100% { opacity: 0.3; }
+      }
+      .ring-inner { animation: pulseInner 2s infinite ease-in-out; }
+      .ring-middle { animation: pulseMiddle 2s infinite ease-in-out; }
+      .ring-outer { animation: pulseOuter 2s infinite ease-in-out; }
+    </style>
+  </defs>
+
+  <!-- Professional rounded rect background -->
+  <rect width="100" height="100" rx="22" fill="transparent" />
+  <!-- Signal/Radio Rings matching the home header icon with SVG animations -->
+  <g fill="none" stroke="#25A2E8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="50" cy="50" r="8" fill="#25A2E8" stroke="none" />
+    <g class="ring-outer">
+      <path d="M20,80 A42.4,42.4 0 0,1 20,20" />
+      <path d="M80,80 A42.4,42.4 0 0,0 80,20" />
+    </g>
+    <g class="ring-middle">
+      <path d="M27.5,72.5 A31.8,31.8 0 0,1 27.5,27.5" />
+      <path d="M72.5,72.5 A31.8,31.8 0 0,0 72.5,27.5" />
+    </g>
+    <g class="ring-inner">
+      <path d="M35,65 A21.2,21.2 0 0,1 35,35" />
+      <path d="M65,65 A21.2,21.2 0 0,0 65,35" />
+    </g>
+  </g>
+</svg>
