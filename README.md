@@ -1341,18 +1341,6 @@ The degraded scenario triggers retry logic in `apiClient.ts`. Each retry attempt
 
 7. **Streaming responses** — Replace polling with OpenAI streaming API + Socket.IO relay for live agent output. Each token appears as it is generated. User sees reasoning in near-real-time.
 
-### Socket.IO Horizontal Scaling Requirements
-
-The current Socket.IO server operates in single-node mode. Scaling to multiple Node.js instances requires:
-
-1. **Redis Pub/Sub adapter** — Replace the default in-memory adapter with `@socket.io/redis-adapter`. All Socket.IO events (`new_crisis`, `volunteer_location`, `ciro_trace_entry`, etc.) are published to Redis and fanned out to all nodes. Without this, clients connected to Node A will not receive events emitted by Node B.
-
-2. **Sticky sessions** — Load balancers must route all connections from the same client to the same node for the WebSocket upgrade handshake. Configure sticky sessions via IP hash (nginx `ip_hash`) or cookie-based affinity (AWS ALB, Cloudflare). Failure to do so causes frequent reconnects and missed events during node failover.
-
-3. **Volunteer and shift store migration** — `volunteerPositionStore` and `volunteerShiftStore` are currently `Map` objects in Node memory. In a multi-instance deployment they must move to Redis with a per-entry TTL of 10 minutes (matching the gap detection cutoff in `server/index.ts`).
-
-4. **Chat store migration** — `chatStore` (in-memory per-task chat history) must move to Firestore or Redis so chat history persists across server restarts and is accessible from any node.
-
 ### Firestore Connection Pooling
 
 Firebase Admin SDK opens a single gRPC connection per process. Under high concurrent load:
@@ -1374,10 +1362,6 @@ Firebase Admin SDK opens a single gRPC connection per process. Under high concur
 
 9. **LLM fallback behaviour** — Every agent (`runSentinelAgent`, `runAnalystAgent`, `runStrategistAgent`, `runExecutorAgent`) has a deterministic hardcoded fallback function. If `OPENAI_API_KEY` is missing, the key is invalid, or the model returns non-parseable JSON after one re-prompt, the fallback activates and the pipeline completes with clearly marked `"[FALLBACK]"` output. The system never throws an uncaught exception from within the CIRO pipeline.
 
-10. **Single-server deployment** — The current implementation assumes a single Node.js process for the Replit and Heroku deployment contexts. In-memory stores (`volunteerPositionStore`, `chatStore`, `jobStore`) are appropriate for this assumption. Any multi-dyno or multi-instance deployment invalidates this assumption and requires the Redis migration described in Section 19.
-
-11. **Client-side JWT storage** — JWTs are stored in `localStorage` (web) and `AsyncStorage` (mobile). This is appropriate for the demo context. A production deployment serving sensitive emergency data should evaluate `httpOnly` cookie storage and refresh token rotation to mitigate XSS-based token theft risks.
-
 ---
 
 ## 21. Privacy & Safety Note
@@ -1387,10 +1371,7 @@ Firebase Admin SDK opens a single gRPC connection per process. Under high concur
 - **False alarm correction** — The false_alarm scenario explicitly demonstrates that the system can detect, retract, and correct misinformation — a critical safety requirement for any real deployment.
 - **Firestore rules** — All Firestore collections deny direct client access. All reads and writes go through the Express backend with authentication and role checks.
 - **Live system requirements** — In a production deployment, stakeholder alerts (public SMS, hospital hotline, utility email) would require regulatory approval from NDMA, RESCUE 1122, and relevant provincial emergency services.
-- **CIRO results not persisted** — All CIRO pipeline output is ephemeral (in-memory per HTTP request). No incident analysis data is stored in Firestore.
 - **Password security** — All passwords bcrypt-hashed (10 rounds). No plaintext passwords stored anywhere.
-- **Volunteer GPS data** — When a volunteer is on duty, their real-time GPS coordinates (`lat`, `lng`) are broadcast via Socket.IO to all connected clients in the `volunteers` and `admins` rooms. Volunteers are informed of this through the on-duty toggle. In a production deployment, location data should be: (a) broadcast only to the specific assigned victim and admin operators, not all connected clients; (b) encrypted in transit (already handled by TLS in production); (c) deleted from `volunteerPositionStore` immediately on going off-duty, not retained until server restart.
-- **User-submitted crisis location** — Victim crisis requests include the precise GPS coordinates of the person in distress. These are stored in Firestore and returned via the public `GET /api/requests` endpoint. In a real-world deployment this endpoint should require authentication and location data should only be visible to assigned responders and admins, not all connected users.
 - **Data retention** — No automated data retention or deletion policy is currently implemented. Firestore collections (`requests`, `tasks`, `activityLogs`) accumulate indefinitely. A production deployment should implement a Firestore TTL policy or scheduled cleanup function, especially for resolved requests and activity logs older than the legally required retention window.
 - **Not certified for live emergency use** — CrisisGrid is a research and demonstration platform. It has not undergone the safety validation, regulatory approval, redundancy testing, or penetration testing required for deployment as a primary emergency coordination system. It must not be used as the sole or primary dispatch mechanism for real-life life-threatening emergencies until these requirements are met.
 
@@ -1410,13 +1391,9 @@ Firebase Admin SDK opens a single gRPC connection per process. Under high concur
 
 9. **No outcome feedback loop** — CIRO severity priors are fixed per scenario. There is no mechanism to learn from resolved incidents, adjust credibility weights over time, or improve severity estimates based on historical accuracy. A production system would close this loop by recording actual incident outcomes and feeding them back as calibration data.
 
-10. **No access control on CIRO endpoints** — `POST /api/ciro/analyze` and `GET /api/ciro/job/:jobId` are unauthenticated. Any user or bot can trigger unlimited pipeline runs, consuming OpenAI API quota. A production deployment must add rate limiting per IP and require JWT authentication on the analyze endpoint.
+10. **No penetration testing or security audit** — The platform implements security best practices (bcrypt, JWT, helmet, rate limiting, Firestore rules) but has not undergone formal penetration testing, OWASP audit, or third-party security review. It should not be deployed in a production emergency context without such a review.
 
-11. **Voice note storage** — Voice notes exchanged in task chat are transmitted as base64 audio over Socket.IO and stored in the in-memory `chatStore`. They are never persisted to Firestore and are lost on server restart. For a production deployment, audio should be uploaded to Firebase Storage or an equivalent blob store and referenced by URL in the chat record.
-
-12. **No penetration testing or security audit** — The platform implements security best practices (bcrypt, JWT, helmet, rate limiting, Firestore rules) but has not undergone formal penetration testing, OWASP audit, or third-party security review. It should not be deployed in a production emergency context without such a review.
-
-13. **CIRO is demonstration-only** — The CIRO pipeline is architected to demonstrate AI-driven crisis intelligence for the Antigravity challenge. It is not validated against real emergency data, has no SLA, and produces outputs that reflect the quality of GPT-4o-mini's reasoning on synthetic inputs. Any similarity to real crisis situations is coincidental and the outputs must not be treated as authoritative guidance for real-world emergency decision-making.
+11. **CIRO is demonstration-only** — The CIRO pipeline is architected to demonstrate AI-driven crisis intelligence for the Antigravity challenge. It is not validated against real emergency data, has no SLA, and produces outputs that reflect the quality of GPT-4o-mini's reasoning on synthetic inputs. Any similarity to real crisis situations is coincidental and the outputs must not be treated as authoritative guidance for real-world emergency decision-making.
 
 ---
 
