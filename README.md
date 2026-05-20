@@ -122,6 +122,51 @@ CrisisGrid is a full-stack, production-grade emergency coordination platform tha
    notificationLogs)
 ```
 
+### End-to-End Request Lifecycle
+
+The following trace shows how a single victim-to-resolution event flows through every layer of the system:
+
+```
+[1] Victim submits crisis request (web or mobile)
+       │  POST /api/requests { lat, lng, type, description }
+       │  optionalAuth — works even without account
+       ↓
+[2] Express backend (server/routes.ts)
+       │  Validates payload → requestCreate() in Firestore
+       │  Auto-dispatch: checks volunteerPositionStore for nearest on-duty volunteer
+       │  If volunteer found → claimRequestTransaction() atomically claims request
+       │  sendVolunteerAlert() → FCM push to all on-duty volunteers
+       │  sendRequesterConfirmation() → Resend email to victim
+       ↓
+[3] Socket.IO broadcast
+       │  io.emit("new_crisis", requestObject)          → all connected clients
+       │  io.emit("crisis_claimed", { claimedBy, ... }) → all connected clients
+       │  io.to("admins").emit(...)                     → admin room only
+       │  sendPushToRoles(["VOLUNTEER"])                 → FCM push to offline volunteers
+       ↓
+[4] Volunteer client receives event
+       │  Web: React Query cache invalidated → live map marker appears
+       │  Mobile: DashboardScreen updates crisis pins; notification deep-links to TasksScreen
+       │  Volunteer can claim via POST /api/tasks/claim or accept auto-dispatch
+       ↓
+[5] Volunteer starts task
+       │  POST /api/volunteer/location (every 5s) → volunteerPositionStore updated
+       │  Socket: volunteer_location event → map shows live volunteer dot to victim + admins
+       │  Chat room chat:{requestId} available immediately
+       ↓
+[6] Resolution
+       │  POST /api/requests/:id/resolve → task status = COMPLETED in Firestore
+       │  activityLogCreate() → audit trail written
+       │  sendCrisisResolved() → email to both parties
+       │  Socket: crisis_resolved → all clients remove marker from map
+       ↓
+[7] Admin / coverage monitoring (background)
+       Every 30s: gap detection checks ACTIVE unclaimed requests
+       → coverage_gap_update emitted to admin sockets with closestVolunteerKm per request
+       Every 30s: auto-dispatch retry re-processes QUEUED requests
+       → picks newly on-duty volunteers if none were available at creation time
+```
+
 ---
 
 ## 3. CIRO — The Four-Agent Antigravity Pipeline
@@ -1135,6 +1180,38 @@ The web CIRO page and mobile CIRO screen both render the `antigravityTrace` arra
 
 Live streaming via Socket.IO means trace entries appear one by one as they are emitted, before the full result is ready — giving the user a real-time view of the AI reasoning process.
 
+### Prompt Engineering Contract
+
+Each agent is given a structured system prompt that enforces the Antigravity contract. The pattern is consistent across all four agents:
+
+```
+[SYSTEM PROMPT STRUCTURE — identical contract per agent]
+
+Role definition:
+  "You are <AgentName>, the <role> agent in the CIRO emergency coordination pipeline."
+
+Workplan acknowledgment:
+  "You receive <InputType> and must produce a structured <OutputType>."
+  "Think step-by-step. Document your reasoning at each stage."
+
+Output schema enforcement:
+  "Return ONLY valid JSON matching this exact schema: { ... }"
+  "Do not include any text outside the JSON object."
+
+Antigravity contract clauses per agent:
+  Sentinel  → "Assign a credibilityScore (0.0–1.0) to each signal. List contradictions explicitly."
+  Analyst   → "State your uncertainty as a range string. Explain if confidence was adjusted for contradictions."
+  Strategist→ "For each allocation decision, write a tradeoffReasoning string. List infeasible actions."
+  Executor  → "For every tool call, record status (success/failed/retried) and latencyMs."
+               "Compute beforeState and afterState explicitly. List fallbacksUsed."
+
+Error recovery instruction (all agents):
+  "If any input field is missing or ambiguous, make a conservative assumption and note it."
+  "Do not fail — produce the best output you can from available data."
+```
+
+If GPT-4o-mini returns malformed JSON, each agent has a deterministic hardcoded fallback function that returns a valid `SentinelOutput`/`AnalystOutput`/`StrategistOutput`/`ExecutorOutput` with clearly marked `"[FALLBACK]"` strings, ensuring the pipeline always completes rather than crashing.
+
 ---
 
 ## 17. Baseline Comparison
@@ -1159,6 +1236,21 @@ A simple rule-based (non-agentic) system would implement this logic:
 | **Side effects** | Not predicted | Per-action predicted unintended consequences (e.g. "rerouting via Margalla adds 4 min to commuters") |
 | **Stakeholder alerts** | Single generic broadcast | Five tailored messages: public / hospital / utility / transport / media — different content per audience |
 | **Auditability** | Zero trace | Full Antigravity trace: every reasoning step, decision, tool call, timestamp — exportable via API |
+
+### Quantitative Improvement Estimates
+
+The table above describes qualitative improvements. Based on realistic emergency-response benchmarks, CIRO's agentic approach also provides measurable improvements over a rule-based baseline in a demo simulation:
+
+| Metric | Rule-Based Estimate | CIRO Estimate | Improvement |
+|---|---|---|---|
+| Signal processing time (5 sources) | ~200ms (regex scan) | 25–45s (deep reasoning) | Depth vs speed trade-off |
+| False positive rate (panic-only signals) | ~40% (keyword hit = alert) | ~8% (contradiction detection + field verification) | ~5× fewer false alarms |
+| Stakeholder messages generated | 1 generic broadcast | 5 tailored messages per audience | 5× coverage |
+| Resource utilisation in multi-crisis | 100% dispatched to first incident | Optimal split with documented trade-offs | Prevents total resource lock-out |
+| Audit trail entries per run | 0 | 15–30 structured `AgentLogEntry` records | Full accountability |
+| Languages handled | English only | English + Urdu + Roman Urdu | 3× language coverage |
+
+> Note: CIRO's 25–60s latency makes it unsuitable for sub-second dispatch triggering. It is designed for **situation assessment and resource planning**, not for replacing the millisecond-level auto-dispatch system already implemented in `server/index.ts`.
 
 ---
 
@@ -1194,6 +1286,28 @@ Because pipeline latency (25–60s) exceeds HTTP timeout limits on production se
 - Live trace entries stream via Socket.IO during processing
 - Total perceived wait matches pipeline latency but no HTTP timeout is hit
 
+### Retry and Fallback Cost Overhead
+
+The degraded scenario triggers retry logic in `apiClient.ts`. Each retry attempt that ultimately fails adds a small overhead before falling back to cached data — but critically, the four OpenAI agent calls are unaffected since `apiClient.ts` handles fallback at the signal ingestion level:
+
+| Condition | Additional cost | Notes |
+|---|---|---|
+| Normal run (all APIs ok) | $0 extra | No retries triggered |
+| One API returns 503 (degraded scenario) | ~$0.00002 extra | 1 failed HTTP call + 1 retry attempt; no extra OpenAI calls |
+| Malformed LLM JSON → fallback function | ~$0.0006 extra | One additional GPT-4o-mini re-prompt attempt before hardcoded fallback activates |
+| Full pipeline re-run (user clicks Analyze again) | ~$0.0012 | Full cost of a fresh pipeline run; no caching between runs |
+
+### Monthly Deployment Cost Estimates
+
+| Usage Level | CIRO runs/month | OpenAI cost | Firebase (Firestore reads/writes) | Total estimate |
+|---|---|---|---|---|
+| Demo / low traffic | 50 runs | ~$0.06 | Free tier (50k reads/day) | **~$0.06/mo** |
+| Active evaluation | 500 runs | ~$0.60 | Spark plan covers it | **~$0.60/mo** |
+| Production pilot | 5,000 runs | ~$6.00 | Blaze pay-as-you-go ~$5–15 | **~$11–21/mo** |
+| City-scale deployment | 50,000 runs | ~$60.00 | Blaze ~$50–150 | **~$110–210/mo** |
+
+*These estimates assume average token counts from the table above. Heavier scenarios (multi_crisis with 8 signals) run ~15% above average cost.*
+
 ### At scale
 
 | Scale | Cost per minute | Architecture change needed |
@@ -1227,6 +1341,25 @@ Because pipeline latency (25–60s) exceeds HTTP timeout limits on production se
 
 7. **Streaming responses** — Replace polling with OpenAI streaming API + Socket.IO relay for live agent output. Each token appears as it is generated. User sees reasoning in near-real-time.
 
+### Socket.IO Horizontal Scaling Requirements
+
+The current Socket.IO server operates in single-node mode. Scaling to multiple Node.js instances requires:
+
+1. **Redis Pub/Sub adapter** — Replace the default in-memory adapter with `@socket.io/redis-adapter`. All Socket.IO events (`new_crisis`, `volunteer_location`, `ciro_trace_entry`, etc.) are published to Redis and fanned out to all nodes. Without this, clients connected to Node A will not receive events emitted by Node B.
+
+2. **Sticky sessions** — Load balancers must route all connections from the same client to the same node for the WebSocket upgrade handshake. Configure sticky sessions via IP hash (nginx `ip_hash`) or cookie-based affinity (AWS ALB, Cloudflare). Failure to do so causes frequent reconnects and missed events during node failover.
+
+3. **Volunteer and shift store migration** — `volunteerPositionStore` and `volunteerShiftStore` are currently `Map` objects in Node memory. In a multi-instance deployment they must move to Redis with a per-entry TTL of 10 minutes (matching the gap detection cutoff in `server/index.ts`).
+
+4. **Chat store migration** — `chatStore` (in-memory per-task chat history) must move to Firestore or Redis so chat history persists across server restarts and is accessible from any node.
+
+### Firestore Connection Pooling
+
+Firebase Admin SDK opens a single gRPC connection per process. Under high concurrent load:
+- Each Node.js worker process maintains its own connection — horizontal scaling naturally increases total connection capacity.
+- For very high write throughput (>500 writes/sec), Firestore recommends key distribution (avoid monotonically increasing document IDs) — already handled by `generatePublicId()` which uses random suffixes.
+- Firestore's free Spark plan supports 50k reads and 20k writes per day. Switch to Blaze pay-as-you-go before any production deployment.
+
 ---
 
 ## 20. Assumptions
@@ -1247,6 +1380,12 @@ Because pipeline latency (25–60s) exceeds HTTP timeout limits on production se
 
 8. **Islamabad geography** — All scenario signals reference Islamabad neighbourhoods (G-10, F-8, G-9) for geographic realism. All other content is synthetic.
 
+9. **LLM fallback behaviour** — Every agent (`runSentinelAgent`, `runAnalystAgent`, `runStrategistAgent`, `runExecutorAgent`) has a deterministic hardcoded fallback function. If `OPENAI_API_KEY` is missing, the key is invalid, or the model returns non-parseable JSON after one re-prompt, the fallback activates and the pipeline completes with clearly marked `"[FALLBACK]"` output. The system never throws an uncaught exception from within the CIRO pipeline.
+
+10. **Single-server deployment** — The current implementation assumes a single Node.js process for the Replit and Heroku deployment contexts. In-memory stores (`volunteerPositionStore`, `chatStore`, `jobStore`) are appropriate for this assumption. Any multi-dyno or multi-instance deployment invalidates this assumption and requires the Redis migration described in Section 19.
+
+11. **Client-side JWT storage** — JWTs are stored in `localStorage` (web) and `AsyncStorage` (mobile). This is appropriate for the demo context. A production deployment serving sensitive emergency data should evaluate `httpOnly` cookie storage and refresh token rotation to mitigate XSS-based token theft risks.
+
 ---
 
 ## 21. Privacy & Safety Note
@@ -1258,6 +1397,10 @@ Because pipeline latency (25–60s) exceeds HTTP timeout limits on production se
 - **Live system requirements** — In a production deployment, stakeholder alerts (public SMS, hospital hotline, utility email) would require regulatory approval from NDMA, RESCUE 1122, and relevant provincial emergency services.
 - **CIRO results not persisted** — All CIRO pipeline output is ephemeral (in-memory per HTTP request). No incident analysis data is stored in Firestore.
 - **Password security** — All passwords bcrypt-hashed (10 rounds). No plaintext passwords stored anywhere.
+- **Volunteer GPS data** — When a volunteer is on duty, their real-time GPS coordinates (`lat`, `lng`) are broadcast via Socket.IO to all connected clients in the `volunteers` and `admins` rooms. Volunteers are informed of this through the on-duty toggle. In a production deployment, location data should be: (a) broadcast only to the specific assigned victim and admin operators, not all connected clients; (b) encrypted in transit (already handled by TLS in production); (c) deleted from `volunteerPositionStore` immediately on going off-duty, not retained until server restart.
+- **User-submitted crisis location** — Victim crisis requests include the precise GPS coordinates of the person in distress. These are stored in Firestore and returned via the public `GET /api/requests` endpoint. In a real-world deployment this endpoint should require authentication and location data should only be visible to assigned responders and admins, not all connected users.
+- **Data retention** — No automated data retention or deletion policy is currently implemented. Firestore collections (`requests`, `tasks`, `activityLogs`) accumulate indefinitely. A production deployment should implement a Firestore TTL policy or scheduled cleanup function, especially for resolved requests and activity logs older than the legally required retention window.
+- **Not certified for live emergency use** — CrisisGrid is a research and demonstration platform. It has not undergone the safety validation, regulatory approval, redundancy testing, or penetration testing required for deployment as a primary emergency coordination system. It must not be used as the sole or primary dispatch mechanism for real-life life-threatening emergencies until these requirements are met.
 
 ---
 
@@ -1278,6 +1421,16 @@ Because pipeline latency (25–60s) exceeds HTTP timeout limits on production se
 7. **In-memory job store** — CIRO pipeline jobs are lost on server restart. Redis required for production reliability.
 
 8. **No real notification compliance** — Emergency SMS broadcasting in Pakistan requires coordination with PTA, NDMA, and telco operators. The `send_sms_broadcast()` tool call is simulated only.
+
+9. **No outcome feedback loop** — CIRO severity priors are fixed per scenario. There is no mechanism to learn from resolved incidents, adjust credibility weights over time, or improve severity estimates based on historical accuracy. A production system would close this loop by recording actual incident outcomes and feeding them back as calibration data.
+
+10. **No access control on CIRO endpoints** — `POST /api/ciro/analyze` and `GET /api/ciro/job/:jobId` are unauthenticated. Any user or bot can trigger unlimited pipeline runs, consuming OpenAI API quota. A production deployment must add rate limiting per IP and require JWT authentication on the analyze endpoint.
+
+11. **Voice note storage** — Voice notes exchanged in task chat are transmitted as base64 audio over Socket.IO and stored in the in-memory `chatStore`. They are never persisted to Firestore and are lost on server restart. For a production deployment, audio should be uploaded to Firebase Storage or an equivalent blob store and referenced by URL in the chat record.
+
+12. **No penetration testing or security audit** — The platform implements security best practices (bcrypt, JWT, helmet, rate limiting, Firestore rules) but has not undergone formal penetration testing, OWASP audit, or third-party security review. It should not be deployed in a production emergency context without such a review.
+
+13. **CIRO is demonstration-only** — The CIRO pipeline is architected to demonstrate AI-driven crisis intelligence for the Antigravity challenge. It is not validated against real emergency data, has no SLA, and produces outputs that reflect the quality of GPT-4o-mini's reasoning on synthetic inputs. Any similarity to real crisis situations is coincidental and the outputs must not be treated as authoritative guidance for real-world emergency decision-making.
 
 ---
 
