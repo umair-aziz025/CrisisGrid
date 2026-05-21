@@ -2,6 +2,10 @@
 
 **Challenge 3 Submission** — Real-time emergency coordination platform with a four-agent AI pipeline for crisis detection, severity prediction, resource allocation, and coordinated response simulation.
 
+[![Presentation PDF](https://img.shields.io/badge/📄%20View%20Presentation-PDF-blue)](https://github.com/umair-aziz025/CrisisGrid/blob/main/releases/CrisisGrid-Presentation.pdf)
+[![Release APK](https://img.shields.io/badge/📱%20Download%20APK-v1.0.0-green)](https://github.com/umair-aziz025/CrisisGrid/releases/download/v1.0.0/app-debug.apk)
+[![GitHub Release](https://img.shields.io/badge/🏷️%20Release-v1.0.0-orange)](https://github.com/umair-aziz025/CrisisGrid/releases/tag/v1.0.0)
+
 ---
 
 ## Table of Contents
