@@ -33,7 +33,7 @@
         "NSCriticalAlertUsageDescription": "CrisisGrid uses critical alerts for life-threatening emergency notifications."
       },
       "config": {
-        "googleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        "googleMapsApiKey": "AIzaSyAFUPxA-YUFc4FQbrS9dMsxy56arLWswvE"
       }
     },
     "android": {
@@ -67,7 +67,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+          "apiKey": "AIzaSyAFUPxA-YUFc4FQbrS9dMsxy56arLWswvE"
         }
       },
       "useNextNotificationsApi": true,
@@ -109,7 +109,7 @@
     },
     "extra": {
       "apiBaseUrl": "https://aidbridge-34695e4b061e.herokuapp.com/",
-      "googleDirectionsKey": "YOUR_GOOGLE_MAPS_API_KEY",
+      "googleDirectionsKey": "AIzaSyAFUPxA-YUFc4FQbrS9dMsxy56arLWswvE",
       "eas": {
         "projectId": "7fdb0a01-189c-4da4-9702-81865ba76f59"
       }

@@ -603,9 +603,18 @@ The web CIRO page provides the same analytical power as the mobile CIRO screen w
 Built with Expo SDK 51 + React Native 0.74 + TypeScript. Supports iOS and Android. Uses dark/light theme via a custom `ThemeProvider`.
 
 <p align="center">
-  <img src="docs/screenshots/mobile-app.jpeg" alt="CrisisGrid Mobile App" width="35%">
-  <br>
-  <sub><i>Mobile App — Live crisis map, active task routing, and push notifications</i></sub>
+  <table>
+    <tr>
+      <td><img src="docs/screenshots/mobile-app-1.jpeg" alt="Dashboard" width="100%"></td>
+      <td><img src="docs/screenshots/mobile-app-2.jpeg" alt="Requests" width="100%"></td>
+      <td><img src="docs/screenshots/mobile-app-3.jpeg" alt="CIRO Agent" width="100%"></td>
+    </tr>
+    <tr>
+      <td align="center"><sub><i>Dashboard — Live map & active tasks</i></sub></td>
+      <td align="center"><sub><i>Requests — Claim & route</i></sub></td>
+      <td align="center"><sub><i>CIRO — AI agent trace</i></sub></td>
+    </tr>
+  </table>
 </p>
 
 ### Navigation Structure
