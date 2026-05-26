@@ -541,6 +541,12 @@ All signal content is **fully synthetic**. No real personal data is used.
 
 Built with React 18 + TypeScript + Vite. Deployed on Heroku. Fully responsive with Tailwind CSS and shadcn/ui.
 
+<p align="center">
+  <img src="docs/screenshots/web-dashboard.png" alt="CrisisGrid Web Dashboard" width="90%">
+  <br>
+  <sub><i>Web Dashboard — Live crisis map with heatmap, auto-dispatch, and real-time volunteer tracking</i></sub>
+</p>
+
 ### Pages & Routes
 
 | Route | Page | Description |
@@ -595,6 +601,12 @@ The web CIRO page provides the same analytical power as the mobile CIRO screen w
 ## 7. Mobile Application
 
 Built with Expo SDK 51 + React Native 0.74 + TypeScript. Supports iOS and Android. Uses dark/light theme via a custom `ThemeProvider`.
+
+<p align="center">
+  <img src="docs/screenshots/mobile-app.jpeg" alt="CrisisGrid Mobile App" width="35%">
+  <br>
+  <sub><i>Mobile App — Live crisis map, active task routing, and push notifications</i></sub>
+</p>
 
 ### Navigation Structure
 
